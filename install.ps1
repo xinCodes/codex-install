@@ -11,6 +11,22 @@ $vcAsset = 'VC_redist.x64.exe'
 $storeId = '9PLM9XGG6VKS' # Microsoft Store ChatGPT app (PackageFamilyName: OpenAI.Codex_2p2nqsd0c76g0)
 $pkgName = 'OpenAI.Codex'
 
+$pkgFamily = 'OpenAI.Codex_2p2nqsd0c76g0'
+
+function Get-InstalledPkgVersion {
+    try {
+        [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
+        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $pm = New-Object Windows.Management.Deployment.PackageManager
+        $pkg = $pm.FindPackagesForUser($sid) | Where-Object { $_.Id.FamilyName -eq $pkgFamily } | Select-Object -First 1
+        if ($pkg) {
+            $v = $pkg.Id.Version
+            return "$($v.Major).$($v.Minor).$($v.Build).$($v.Revision)"
+        }
+    } catch { }
+    return $null
+}
+
 function Test-VcRedistInstalled {
     $paths = @(
         'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64',
@@ -58,9 +74,9 @@ $wingetMajor = 0
 if ($wingetVer -match 'v?(\d+)\.') { $wingetMajor = [int]$Matches[1] }
 Write-Host "  winget version: $wingetVer"
 
-$existing = Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "  Installed version: $($existing.Version), upgrading to latest..."
+$existingVer = Get-InstalledPkgVersion
+if ($existingVer) {
+    Write-Host "  Installed version: $existingVer, upgrading to latest..."
 }
 
 function Invoke-Winget {
@@ -110,9 +126,9 @@ if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundC
 # ---------- [3/3] Verify ----------
 Write-Host ''
 Write-Host '[3/3] Verifying installation...' -ForegroundColor Yellow
-$pkg = Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue
-if ($pkg) {
-    Write-Host "  [OK] $($pkg.Name) version $($pkg.Version) installed" -ForegroundColor Green
+$ver = Get-InstalledPkgVersion
+if ($ver) {
+    Write-Host "  [OK] $pkgName version $ver installed" -ForegroundColor Green
 } else {
     Write-Host '  [WARN] Package not detected, check Start Menu or Microsoft Store' -ForegroundColor Yellow
 }
