@@ -10,13 +10,13 @@
 在 PowerShell 中运行：
 
 ```powershell
-irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 | iex
+irm https://cdn.jsdelivr.net/gh/xinCodes/codex-install@main/install.ps1 | iex
 ```
 
 或（推荐，先下载审计再执行）：
 
 ```powershell
-irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 -OutFile install.ps1
+irm https://cdn.jsdelivr.net/gh/xinCodes/codex-install@main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 
@@ -33,6 +33,7 @@ irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 -O
 - 重复运行会自动检测：VC++ 已装则跳过，ChatGPT 已是最新则跳过（winget 返回 `-1978335189` 视为成功）。
 - 安装 VC++ 时可能弹出 UAC 授权窗口，请点"是"。
 - 脚本来自本仓库，执行前可先下载查看内容。
+- jsDelivr 对 `@main` 有数小时缓存，更新脚本后稍等片刻再拉取。
 
 ## 手动安装（备用）
 
