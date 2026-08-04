@@ -54,17 +54,35 @@ if (Test-VcRedistInstalled) {
 Write-Host ''
 Write-Host '[2/3] Getting latest ChatGPT package from Microsoft Store (winget msstore)...' -ForegroundColor Yellow
 $wingetVer = (winget --version) 2>$null
+$wingetMajor = 0
+if ($wingetVer -match 'v?(\d+)\.') { $wingetMajor = [int]$Matches[1] }
 Write-Host "  winget version: $wingetVer"
+
 $existing = Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue
 if ($existing) {
     Write-Host "  Installed version: $($existing.Version), upgrading to latest..."
 }
-winget install --id $storeId --source msstore --accept-package-agreements --accept-source-agreements
-# 0=success; -1978335189 = msstore "no upgrade available" (already latest), treated as success
-if ($LASTEXITCODE -notin @(0, -1978335189)) {
-    throw "winget install failed (exit code $LASTEXITCODE). If your winget is too old, update it from Microsoft Store first, then run again."
+
+function Invoke-MsstoreInstall {
+    winget install --id $storeId --source msstore --accept-package-agreements --accept-source-agreements
+    return $LASTEXITCODE
 }
-if ($LASTEXITCODE -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
+
+$code = Invoke-MsstoreInstall
+if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
+    Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
+    winget install --id Microsoft.AppInstaller --source winget --accept-package-agreements --accept-source-agreements | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '  winget upgraded, retrying msstore install...'
+        $code = Invoke-MsstoreInstall
+    }
+}
+if ($code -notin @(0, -1978335189)) {
+    Write-Host '  [WARN] winget msstore failed, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
+    Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
+    throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
+}
+if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
 
 # ---------- [3/3] Verify ----------
 Write-Host ''
