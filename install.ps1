@@ -13,6 +13,32 @@ $pkgName = 'OpenAI.Codex'
 
 $pkgFamily = 'OpenAI.Codex_2p2nqsd0c76g0'
 
+function Invoke-Winget {
+    param([string[]]$ArgsList, [int]$TimeoutSec = 300)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'winget'
+    $psi.Arguments = ($ArgsList -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+        try { $p.Kill() } catch { }
+        Write-Host "  [WARN] winget timed out after ${TimeoutSec}s, killed" -ForegroundColor Yellow
+        return -1
+    }
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+    if ($stdout) { Write-Host $stdout.TrimEnd() }
+    if ($stderr) { Write-Host $stderr.TrimEnd() }
+    return $p.ExitCode
+}
+
 $MsixPath = $env:CODEX_MSIX_PATH
 if (-not $MsixPath -and $args.Count -gt 0) { $MsixPath = $args[0] }
 if ($MsixPath) { Write-Host "MSIX source: $MsixPath" -ForegroundColor Cyan }
