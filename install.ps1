@@ -87,6 +87,8 @@ function Invoke-Winget {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
     $psi.CreateNoWindow = $true
     $p = [System.Diagnostics.Process]::Start($psi)
     $outTask = $p.StandardOutput.ReadToEndAsync()
