@@ -69,12 +69,21 @@ function Invoke-Winget {
     $psi.FileName = 'winget'
     $psi.Arguments = ($ArgsList -join ' ')
     $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
     $p = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         try { $p.Kill() } catch { }
         Write-Host "  [WARN] winget timed out after ${TimeoutSec}s, killed" -ForegroundColor Yellow
         return -1
     }
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+    if ($stdout) { Write-Host $stdout.TrimEnd() }
+    if ($stderr) { Write-Host $stderr.TrimEnd() }
     return $p.ExitCode
 }
 
