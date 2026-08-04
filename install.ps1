@@ -63,22 +63,36 @@ if ($existing) {
     Write-Host "  Installed version: $($existing.Version), upgrading to latest..."
 }
 
-function Invoke-MsstoreInstall {
-    winget install --id $storeId --source msstore --accept-package-agreements --accept-source-agreements
-    return $LASTEXITCODE
+function Invoke-Winget {
+    param([string[]]$ArgsList, [int]$TimeoutSec = 300)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'winget'
+    $psi.Arguments = ($ArgsList -join ' ')
+    $psi.UseShellExecute = $false
+    $p = [System.Diagnostics.Process]::Start($psi)
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+        try { $p.Kill() } catch { }
+        Write-Host "  [WARN] winget timed out after ${TimeoutSec}s, killed" -ForegroundColor Yellow
+        return -1
+    }
+    return $p.ExitCode
 }
 
-$code = Invoke-MsstoreInstall
+$msstoreArgs = @('install', '--id', $storeId, '--source', 'msstore', '--accept-package-agreements', '--accept-source-agreements')
+$code = Invoke-Winget -ArgsList $msstoreArgs
+Write-Host "  msstore exit code: $code"
 if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
     Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
-    winget install --id Microsoft.AppInstaller --source winget --accept-package-agreements --accept-source-agreements | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
+    Write-Host "  winget upgrade exit code: $upgradeCode"
+    if ($upgradeCode -eq 0) {
         Write-Host '  winget upgraded, retrying msstore install...'
-        $code = Invoke-MsstoreInstall
+        $code = Invoke-Winget -ArgsList $msstoreArgs
+        Write-Host "  msstore retry exit code: $code"
     }
 }
 if ($code -notin @(0, -1978335189)) {
-    Write-Host '  [WARN] winget msstore failed, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
+    Write-Host '  [WARN] Could not install via winget, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
     Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
     throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
 }
