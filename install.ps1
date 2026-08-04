@@ -50,6 +50,28 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 if ($MsixPath) { Write-Host "MSIX source: $MsixPath" -ForegroundColor Cyan }
 
+function Get-StoreMsixUrl {
+    param([string]$Arch = 'x64')
+    $pkgSuffix = "_$Arch" + '__2p2nqsd0c76g0.msix'
+    $headers = @{
+        'User-Agent'   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+        'Referer'      = 'https://store.rg-adguard.net/'
+        'Origin'       = 'https://store.rg-adguard.net'
+        'Content-Type' = 'application/x-www-form-urlencoded'
+    }
+    $body = "type=ProductId&url=$storeId&ring=RP&lang=zh-CN"
+    $html = (Invoke-WebRequest -Uri 'https://store.rg-adguard.net/api/GetFiles' -Method Post -Headers $headers -Body $body -UseBasicParsing).Content
+    $pattern = '<a[^>]*href="([^"]+)"[^>]*>([^<]+\.msix)</a>'
+    foreach ($m in [regex]::Matches($html, $pattern)) {
+        $text = $m.Groups[2].Value.Trim()
+        if ($text -like '*BlockMap*') { continue }
+        if ($text -like "*$pkgSuffix") {
+            return @{ Name = $text; Url = [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value) }
+        }
+    }
+    return $null
+}
+
 function Get-InstalledPkgVersion {
     try {
         [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
@@ -156,15 +178,29 @@ if ($MsixPath) {
     $code = Invoke-Winget -ArgsList $msstoreArgs
     Write-Host "  msstore exit code: $code"
     if ($code -eq -2147012867) {
-        Write-Host '  [WARN] Microsoft Store is unreachable from this machine (network/restriction).' -ForegroundColor Yellow
-        Write-Host '  Offline flow:' -ForegroundColor Yellow
-        Write-Host '    1. On a machine that can reach the store, download the latest package:' -ForegroundColor Yellow
-        Write-Host '         powershell -File .\get-msix.ps1' -ForegroundColor Yellow
-        Write-Host '    2. Copy the .msix to this machine, then install:' -ForegroundColor Yellow
-        Write-Host '         powershell -File .\install.ps1 -MsixPath <path-to-msix>' -ForegroundColor Yellow
-        throw 'Microsoft Store unreachable. Use the offline MSIX flow (get-msix.ps1 + install.ps1 -MsixPath).'
-    }
-    if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
+        Write-Host '  [WARN] Microsoft Store unreachable, trying direct CDN download...' -ForegroundColor Yellow
+        try {
+            $pkg = Get-StoreMsixUrl
+            if ($pkg) {
+                $tmp = Join-Path $env:TEMP $pkg.Name
+                Write-Host "  Downloading $($pkg.Name) (~724MB), this may take a while..."
+                Invoke-WebRequest -Uri $pkg.Url -OutFile $tmp -UseBasicParsing
+                if (Install-Msix -Path $tmp) { $code = 0 }
+                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+            Write-Host "  [WARN] Direct CDN download failed: $_" -ForegroundColor Yellow
+        }
+        if ($code -eq -2147012867) {
+            Write-Host '  [WARN] Direct CDN route failed too.' -ForegroundColor Yellow
+            Write-Host '  Offline flow:' -ForegroundColor Yellow
+            Write-Host '    1. On a machine that can reach the store, download the latest package:' -ForegroundColor Yellow
+            Write-Host '         powershell -File .\get-msix.ps1' -ForegroundColor Yellow
+            Write-Host '    2. Copy the .msix to this machine, then install:' -ForegroundColor Yellow
+            Write-Host '         powershell -File .\install.ps1 -MsixPath <path-to-msix>' -ForegroundColor Yellow
+            throw 'Microsoft Store unreachable. Use the offline MSIX flow (get-msix.ps1 + install.ps1 -MsixPath).'
+        }
+    } elseif ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
         Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
         $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
         Write-Host "  winget upgrade exit code: $upgradeCode"
@@ -174,7 +210,7 @@ if ($MsixPath) {
             Write-Host "  msstore retry exit code: $code"
         }
     }
-    if ($code -notin @(0, -1978335189)) {
+    if ($code -notin @(0, -1978335189) -and $code -ne -2147012867) {
         Write-Host '  [WARN] Could not install via winget, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
         Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
         throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
