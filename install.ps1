@@ -40,7 +40,14 @@ function Invoke-Winget {
 }
 
 $MsixPath = $env:CODEX_MSIX_PATH
-if (-not $MsixPath -and $args.Count -gt 0) { $MsixPath = $args[0] }
+for ($i = 0; $i -lt $args.Count; $i++) {
+    if ($args[$i] -eq '-MsixPath' -and ($i + 1) -lt $args.Count) {
+        $MsixPath = $args[$i + 1]
+        $i++
+    } elseif (-not $MsixPath) {
+        $MsixPath = $args[$i]
+    }
+}
 if ($MsixPath) { Write-Host "MSIX source: $MsixPath" -ForegroundColor Cyan }
 
 function Get-InstalledPkgVersion {
@@ -148,6 +155,15 @@ if ($MsixPath) {
     $msstoreArgs = @('install', '--id', $storeId, '--source', 'msstore', '--accept-package-agreements', '--accept-source-agreements')
     $code = Invoke-Winget -ArgsList $msstoreArgs
     Write-Host "  msstore exit code: $code"
+    if ($code -eq -2147012867) {
+        Write-Host '  [WARN] Microsoft Store is unreachable from this machine (network/restriction).' -ForegroundColor Yellow
+        Write-Host '  Offline flow:' -ForegroundColor Yellow
+        Write-Host '    1. On a machine that can reach the store, download the latest package:' -ForegroundColor Yellow
+        Write-Host '         powershell -File .\get-msix.ps1' -ForegroundColor Yellow
+        Write-Host '    2. Copy the .msix to this machine, then install:' -ForegroundColor Yellow
+        Write-Host '         powershell -File .\install.ps1 -MsixPath <path-to-msix>' -ForegroundColor Yellow
+        throw 'Microsoft Store unreachable. Use the offline MSIX flow (get-msix.ps1 + install.ps1 -MsixPath).'
+    }
     if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
         Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
         $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
