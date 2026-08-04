@@ -7,21 +7,31 @@
 
 ## 一键安装
 
-在 PowerShell 中运行（国内网络推荐 jsDelivr CDN 入口）：
+### 方式一：国内（jsDelivr CDN）
 
 ```powershell
 irm https://cdn.jsdelivr.net/gh/xinCodes/codex-install@main/install.ps1 | iex
 ```
 
-或先下载审计再执行：
+先下载审计再执行：
 
 ```powershell
 irm https://cdn.jsdelivr.net/gh/xinCodes/codex-install@main/install.ps1 -OutFile install.ps1
 ./install.ps1
 ```
 
-> 海外 / 网络可达时也可直接用 GitHub raw：
-> `irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 | iex`
+### 方式二：直连（GitHub raw，海外 / 开梯子时）
+
+```powershell
+irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 | iex
+```
+
+先下载审计再执行：
+
+```powershell
+irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 -OutFile install.ps1
+./install.ps1
+```
 
 ## 流程
 
