@@ -48,6 +48,26 @@ irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 -O
 - 脚本来自本仓库，执行前可先下载查看内容。
 - jsDelivr 对 `@main` 有数小时缓存，更新脚本后稍等片刻再拉取。
 
+## 离线安装（服务器 / 无法访问微软商店时）
+
+如果目标机器无法访问微软商店（如服务器策略限制），可在**能访问商店的机器**上先用 `get-msix.ps1` 下载最新 MSIX 包，再拷到目标机器安装：
+
+```powershell
+# 1) 在能访问商店的机器上下载最新包（x64，约 724MB）
+powershell -ExecutionPolicy Bypass -File .\get-msix.ps1
+
+# 2) 拷到目标机器后，用本地 MSIX 安装（自动检查 VC++）
+powershell -ExecutionPolicy Bypass -File .\install.ps1 D:\OpenAI.Codex_..._x64__2p2nqsd0c76g0.msix
+```
+
+> 也支持环境变量方式（适合 `irm | iex` 场景）：
+> ```powershell
+> $env:CODEX_MSIX_PATH = "D:\OpenAI.Codex_...msix"
+> irm https://raw.githubusercontent.com/xinCodes/codex-install/main/install.ps1 | iex
+> ```
+
+`get-msix.ps1` 通过微软商店 CDN 解析最新包下载链接（原理类似 store.rg-adguard.net），支持 `-Arch arm64`、`-OutDir`、`-ListOnly` 参数。
+
 ## 手动安装（备用）
 
 ```powershell

@@ -13,6 +13,10 @@ $pkgName = 'OpenAI.Codex'
 
 $pkgFamily = 'OpenAI.Codex_2p2nqsd0c76g0'
 
+$MsixPath = $env:CODEX_MSIX_PATH
+if (-not $MsixPath -and $args.Count -gt 0) { $MsixPath = $args[0] }
+if ($MsixPath) { Write-Host "MSIX source: $MsixPath" -ForegroundColor Cyan }
+
 function Get-InstalledPkgVersion {
     try {
         [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
@@ -25,6 +29,37 @@ function Get-InstalledPkgVersion {
         }
     } catch { }
     return $null
+}
+
+function Install-Msix {
+    param([string]$Path)
+    Write-Host "  Installing $Path ..."
+    try {
+        Add-AppxPackage -Path $Path -ErrorAction Stop
+        Write-Host '  [OK] Installed via Add-AppxPackage' -ForegroundColor Green
+        return $true
+    } catch {
+        $errMsg = $_.Exception.Message
+        if ($PSVersionTable.PSVersion.Major -eq 5) {
+            Write-Host "  [ERROR] Add-AppxPackage failed on Windows PowerShell 5.1: $errMsg" -ForegroundColor Red
+            Write-Host '  Hint: package may already be installed, or run from an elevated prompt.' -ForegroundColor Yellow
+            return $false
+        }
+        # PowerShell 7+: Add-AppxPackage unavailable, fall back to WinRT PackageManager
+        try {
+            [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType=WindowsRuntime] | Out-Null
+            $pm = New-Object Windows.Management.Deployment.PackageManager
+            $uri = [Uri]('file:///' + $Path.Replace('\', '/'))
+            $op = $pm.AddPackageAsync($uri, $null, 'None')
+            while ($op.Status -eq 'Started') { Start-Sleep -Milliseconds 300 }
+            if ($op.Status -ne 'Completed') { throw "AddPackageAsync status: $($op.Status)" }
+            Write-Host '  [OK] Installed via WinRT PackageManager' -ForegroundColor Green
+            return $true
+        } catch {
+            Write-Host "  [ERROR] MSIX install failed: $_" -ForegroundColor Red
+            return $false
+        }
+    }
 }
 
 function Test-VcRedistInstalled {
@@ -66,64 +101,44 @@ if (Test-VcRedistInstalled) {
     Write-Host '  [OK] VC++ Redistributable installed' -ForegroundColor Green
 }
 
-# ---------- [2/3] Latest ChatGPT from Microsoft Store ----------
+# ---------- [2/3] ChatGPT install ----------
 Write-Host ''
-Write-Host '[2/3] Getting latest ChatGPT package from Microsoft Store (winget msstore)...' -ForegroundColor Yellow
-$wingetVer = (winget --version) 2>$null
-$wingetMajor = 0
-if ($wingetVer -match 'v?(\d+)\.') { $wingetMajor = [int]$Matches[1] }
-Write-Host "  winget version: $wingetVer"
+if ($MsixPath) {
+    Write-Host '[2/3] Installing ChatGPT from local MSIX file...' -ForegroundColor Yellow
+    if (-not (Test-Path -LiteralPath $MsixPath)) { throw "MSIX file not found: $MsixPath" }
+    if (Install-Msix -Path $MsixPath) { $code = 0 } else { $code = -1 }
+} else {
+    Write-Host '[2/3] Getting latest ChatGPT package from Microsoft Store (winget msstore)...' -ForegroundColor Yellow
+    $wingetVer = (winget --version) 2>$null
+    $wingetMajor = 0
+    if ($wingetVer -match 'v?(\d+)\.') { $wingetMajor = [int]$Matches[1] }
+    Write-Host "  winget version: $wingetVer"
 
-$existingVer = Get-InstalledPkgVersion
-if ($existingVer) {
-    Write-Host "  Installed version: $existingVer, upgrading to latest..."
-}
-
-function Invoke-Winget {
-    param([string[]]$ArgsList, [int]$TimeoutSec = 300)
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = 'winget'
-    $psi.Arguments = ($ArgsList -join ' ')
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $psi.CreateNoWindow = $true
-    $p = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $p.StandardOutput.ReadToEndAsync()
-    $errTask = $p.StandardError.ReadToEndAsync()
-    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-        try { $p.Kill() } catch { }
-        Write-Host "  [WARN] winget timed out after ${TimeoutSec}s, killed" -ForegroundColor Yellow
-        return -1
+    $existingVer = Get-InstalledPkgVersion
+    if ($existingVer) {
+        Write-Host "  Installed version: $existingVer, upgrading to latest..."
     }
-    $stdout = $outTask.Result
-    $stderr = $errTask.Result
-    if ($stdout) { Write-Host $stdout.TrimEnd() }
-    if ($stderr) { Write-Host $stderr.TrimEnd() }
-    return $p.ExitCode
-}
 
-$msstoreArgs = @('install', '--id', $storeId, '--source', 'msstore', '--accept-package-agreements', '--accept-source-agreements')
-$code = Invoke-Winget -ArgsList $msstoreArgs
-Write-Host "  msstore exit code: $code"
-if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
-    Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
-    $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
-    Write-Host "  winget upgrade exit code: $upgradeCode"
-    if ($upgradeCode -eq 0) {
-        Write-Host '  winget upgraded, retrying msstore install...'
-        $code = Invoke-Winget -ArgsList $msstoreArgs
-        Write-Host "  msstore retry exit code: $code"
+    $msstoreArgs = @('install', '--id', $storeId, '--source', 'msstore', '--accept-package-agreements', '--accept-source-agreements')
+    $code = Invoke-Winget -ArgsList $msstoreArgs
+    Write-Host "  msstore exit code: $code"
+    if ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
+        Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
+        $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
+        Write-Host "  winget upgrade exit code: $upgradeCode"
+        if ($upgradeCode -eq 0) {
+            Write-Host '  winget upgraded, retrying msstore install...'
+            $code = Invoke-Winget -ArgsList $msstoreArgs
+            Write-Host "  msstore retry exit code: $code"
+        }
     }
+    if ($code -notin @(0, -1978335189)) {
+        Write-Host '  [WARN] Could not install via winget, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
+        Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
+        throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
+    }
+    if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
 }
-if ($code -notin @(0, -1978335189)) {
-    Write-Host '  [WARN] Could not install via winget, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
-    Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
-    throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
-}
-if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
 
 # ---------- [3/3] Verify ----------
 Write-Host ''
