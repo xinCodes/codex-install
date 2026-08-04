@@ -53,7 +53,7 @@ if (Test-VcRedistInstalled) {
 # ---------- [2/3] Latest ChatGPT from Microsoft Store ----------
 Write-Host ''
 Write-Host '[2/3] Getting latest ChatGPT package from Microsoft Store (winget msstore)...' -ForegroundColor Yellow
-$wingetVer = (winget --version) 2>/dev/null
+$wingetVer = (winget --version) 2>$null
 Write-Host "  winget version: $wingetVer"
 $existing = Get-AppxPackage -Name $pkgName -ErrorAction SilentlyContinue
 if ($existing) {
