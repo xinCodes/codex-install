@@ -177,45 +177,45 @@ if ($MsixPath) {
     $msstoreArgs = @('install', '--id', $storeId, '--source', 'msstore', '--accept-package-agreements', '--accept-source-agreements')
     $code = Invoke-Winget -ArgsList $msstoreArgs
     Write-Host "  msstore exit code: $code"
-    if ($code -eq -2147012867) {
-        Write-Host '  [WARN] Microsoft Store unreachable, trying direct CDN download...' -ForegroundColor Yellow
+    if ($code -in @(0, -1978335189)) {
+        if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
+    } else {
+        # msstore unavailable (network / no store account / old winget) -> try direct CDN download
+        Write-Host '  msstore failed, trying direct CDN download of the latest package...' -ForegroundColor Yellow
+        $cdnOk = $false
         try {
             $pkg = Get-StoreMsixUrl
             if ($pkg) {
                 $tmp = Join-Path $env:TEMP $pkg.Name
                 Write-Host "  Downloading $($pkg.Name) (~724MB), this may take a while..."
                 Invoke-WebRequest -Uri $pkg.Url -OutFile $tmp -UseBasicParsing
-                if (Install-Msix -Path $tmp) { $code = 0 }
+                $cdnOk = Install-Msix -Path $tmp
                 Remove-Item $tmp -Force -ErrorAction SilentlyContinue
             }
         } catch {
             Write-Host "  [WARN] Direct CDN download failed: $_" -ForegroundColor Yellow
         }
-        if ($code -eq -2147012867) {
-            Write-Host '  [WARN] Direct CDN route failed too.' -ForegroundColor Yellow
-            Write-Host '  Offline flow:' -ForegroundColor Yellow
+        if (-not $cdnOk) {
+            if ($wingetMajor -lt 2) {
+                Write-Host '  Trying to upgrade winget first...' -ForegroundColor Yellow
+                $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
+                Write-Host "  winget upgrade exit code: $upgradeCode"
+                if ($upgradeCode -eq 0) {
+                    $code = Invoke-Winget -ArgsList $msstoreArgs
+                    Write-Host "  msstore retry exit code: $code"
+                    if ($code -in @(0, -1978335189)) { $cdnOk = $true }
+                }
+            }
+        }
+        if (-not $cdnOk) {
+            Write-Host '  [WARN] Automatic install failed. Offline flow:' -ForegroundColor Yellow
             Write-Host '    1. On a machine that can reach the store, download the latest package:' -ForegroundColor Yellow
             Write-Host '         powershell -File .\get-msix.ps1' -ForegroundColor Yellow
             Write-Host '    2. Copy the .msix to this machine, then install:' -ForegroundColor Yellow
             Write-Host '         powershell -File .\install.ps1 -MsixPath <path-to-msix>' -ForegroundColor Yellow
-            throw 'Microsoft Store unreachable. Use the offline MSIX flow (get-msix.ps1 + install.ps1 -MsixPath).'
-        }
-    } elseif ($code -notin @(0, -1978335189) -and $wingetMajor -lt 2) {
-        Write-Host '  msstore source failed, trying to upgrade winget first...' -ForegroundColor Yellow
-        $upgradeCode = Invoke-Winget -ArgsList @('install', '--id', 'Microsoft.AppInstaller', '--source', 'winget', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 420
-        Write-Host "  winget upgrade exit code: $upgradeCode"
-        if ($upgradeCode -eq 0) {
-            Write-Host '  winget upgraded, retrying msstore install...'
-            $code = Invoke-Winget -ArgsList $msstoreArgs
-            Write-Host "  msstore retry exit code: $code"
+            throw "Automatic install failed (winget exit $code). Use the offline MSIX flow above."
         }
     }
-    if ($code -notin @(0, -1978335189) -and $code -ne -2147012867) {
-        Write-Host '  [WARN] Could not install via winget, opening Microsoft Store page for manual install...' -ForegroundColor Yellow
-        Start-Process "ms-windows-store://pdp/?ProductId=$storeId"
-        throw "winget msstore failed (exit code $code). Complete the install in the Microsoft Store window, then rerun to verify."
-    }
-    if ($code -eq -1978335189) { Write-Host '  [OK] Already up to date' -ForegroundColor Green }
 }
 
 # ---------- [3/3] Verify ----------
